@@ -1,0 +1,4 @@
+github.com/tysonmote/gommap v0.0.3 h1:/TgH30oyoBKMHQu+RsbDVjgHxA6R/aARv055Z36Li88=
+github.com/tysonmote/gommap v0.0.3/go.mod h1:XsS5iBGqoNFLB6QPtF8ZKx7SHFi3Gx+QgzExGyXJ9MA=
+google.golang.org/protobuf v1.36.8 h1:xHScyCOEuuwZEc6UtSOvPbAT4zRh0xcNRYekJwfqyMc=
+google.golang.org/protobuf v1.36.8/go.mod h1:fuxRtAxBytpl4zzqUh6/eyUujkJdNiuEkXntxiD/uRU=
