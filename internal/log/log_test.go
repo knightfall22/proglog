@@ -68,6 +68,12 @@ func testOutOfRangeErr(t *testing.T, l *Log) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+
+	apiErr := err.(proglog.ErrOffsetOutOfRange)
+
+	if apiErr.Offset != 1 {
+		t.Fatal("offset mismatch")
+	}
 }
 
 func testInitExisting(t *testing.T, o *Log) {

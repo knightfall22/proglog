@@ -1,7 +1,6 @@
 package log
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"path"
@@ -118,13 +117,13 @@ func (l *Log) Read(off uint64) (*proglog.Record, error) {
 	})
 
 	if sidx == -1 {
-		return nil, fmt.Errorf("offset out of range: %d", off)
+		return nil, proglog.ErrOffsetOutOfRange{Offset: off}
 	}
 
 	s = l.segments[sidx]
 
 	if s == nil || s.nextOffset <= off {
-		return nil, fmt.Errorf("offset out of range: %d", off)
+		return nil, proglog.ErrOffsetOutOfRange{Offset: off}
 	}
 	return s.Read(off)
 }
