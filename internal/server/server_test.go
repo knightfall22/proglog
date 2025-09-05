@@ -7,11 +7,13 @@ import (
 	"os"
 	"testing"
 
+	"github.com/knightfall22/proglog/internal/auth"
 	"github.com/knightfall22/proglog/internal/config"
 	log "github.com/knightfall22/proglog/internal/log"
 
 	proglog "github.com/knightfall22/proglog/api/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 )
@@ -19,7 +21,8 @@ import (
 func TestServer(t *testing.T) {
 	for scenario, fn := range map[string]func(
 		t *testing.T,
-		client proglog.LogClient,
+		rootClient proglog.LogClient,
+		nobodyClient proglog.LogClient,
 		config *Config,
 	){
 		"produce/consume a message to/from the log succeeeds": testProduceConsume,
@@ -27,14 +30,14 @@ func TestServer(t *testing.T) {
 		"consume past log boundary fails":                     testConsumePastBoundary,
 	} {
 		t.Run(scenario, func(t *testing.T) {
-			client, config, teardown := setupTest(t, nil)
+			rootClient, nobodyClient, config, teardown := setupTest(t, nil)
 			defer teardown()
-			fn(t, client, config)
+			fn(t, rootClient, nobodyClient, config)
 		})
 	}
 }
 
-func testProduceConsume(t *testing.T, client proglog.LogClient, config *Config) {
+func testProduceConsume(t *testing.T, client, _ proglog.LogClient, config *Config) {
 	ctx := context.Background()
 
 	value := proglog.Record{
@@ -64,7 +67,7 @@ func testProduceConsume(t *testing.T, client proglog.LogClient, config *Config) 
 	}
 }
 
-func testConsumePastBoundary(t *testing.T, client proglog.LogClient, config *Config) {
+func testConsumePastBoundary(t *testing.T, client, _ proglog.LogClient, config *Config) {
 	ctx := context.Background()
 
 	produce, err := client.Produce(ctx, &proglog.ProduceRequest{
@@ -93,7 +96,7 @@ func testConsumePastBoundary(t *testing.T, client proglog.LogClient, config *Con
 
 func testProduceConsumeStream(
 	t *testing.T,
-	client proglog.LogClient,
+	client, _ proglog.LogClient,
 	config *Config,
 ) {
 	ctx := context.Background()
@@ -170,7 +173,52 @@ func testProduceConsumeStream(
 	}
 }
 
-func setupTest(t *testing.T, fn func(*Config)) (client proglog.LogClient, cfg *Config, teardown func()) {
+func testUnauthorized(
+	t *testing.T,
+	_, client proglog.LogClient,
+	config *Config,
+) {
+	ctx := context.Background()
+
+	records := &proglog.Record{
+		Value: []byte("Wilson Fisk"),
+	}
+
+	res, err := client.Produce(ctx, &proglog.ProduceRequest{
+		Record: records,
+	})
+
+	if res != nil {
+		t.Fatalf("expected result to be nil got %d instead", res.Offset)
+	}
+
+	want := codes.PermissionDenied
+	got := status.Code(err)
+
+	if want != got {
+		t.Fatalf("error mismatch want %v got %v", want, got)
+	}
+
+	consume, err := client.Consume(ctx, &proglog.ConsumeRequest{
+		Offset: 0,
+	})
+
+	if consume != nil {
+		t.Fatalf("expected result to be nil got %v instead", consume.Record)
+	}
+
+	want = codes.PermissionDenied
+	got = status.Code(err)
+
+	if want != got {
+		t.Fatalf("error mismatch want %v got %v", want, got)
+	}
+}
+
+func setupTest(t *testing.T, fn func(*Config)) (
+	rootClient proglog.LogClient,
+	nobodyClient proglog.LogClient,
+	cfg *Config, teardown func()) {
 	t.Helper()
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -178,23 +226,47 @@ func setupTest(t *testing.T, fn func(*Config)) (client proglog.LogClient, cfg *C
 		t.Fatalf("failed to setup listener %v", err)
 	}
 
-	clientTLSConfig, err := config.SetupTLSConfig(config.TLSConfig{
-		CAFile:   config.CAFile,
-		CertFile: config.ClientCertFile,
-		KeyFile:  config.ClientKeyFile,
-	})
-	if err != nil {
-		t.Fatalf("failed to setup tls config %v", err)
+	newClient := func(crtPath, keyPath string) (
+		*grpc.ClientConn,
+		proglog.LogClient,
+		[]grpc.DialOption,
+	) {
+
+		tlsConfig, err := config.SetupTLSConfig(config.TLSConfig{
+			CertFile:      crtPath,
+			KeyFile:       keyPath,
+			CAFile:        config.CAFile,
+			ServerAddress: l.Addr().String(),
+			Server:        false,
+		})
+		if err != nil {
+			t.Fatalf("error as occured creating client tls config %v", err)
+		}
+
+		tlsCreds := credentials.NewTLS(tlsConfig)
+		opts := []grpc.DialOption{grpc.WithTransportCredentials(tlsCreds)}
+
+		conn, err := grpc.NewClient(l.Addr().String(), opts...)
+		if err != nil {
+			t.Fatalf("error setuping grpc client %v", err)
+		}
+
+		client := proglog.NewLogClient(conn)
+
+		return conn, client, opts
 	}
 
-	clientCreds := credentials.NewTLS(clientTLSConfig)
+	var rootConn *grpc.ClientConn
+	rootConn, rootClient, _ = newClient(
+		config.RootClientCertFile,
+		config.RootClientKeyFile,
+	)
 
-	clientOpts := []grpc.DialOption{grpc.WithTransportCredentials(clientCreds)}
-
-	cc, err := grpc.NewClient(l.Addr().String(), clientOpts...)
-	if err != nil {
-		t.Fatalf("error setuping grpc client %v", err)
-	}
+	var nobodyConn *grpc.ClientConn
+	nobodyConn, nobodyClient, _ = newClient(
+		config.NobodyClientCertFile,
+		config.NobodyClientKeyFile,
+	)
 
 	dir, err := os.MkdirTemp("", "segment-test")
 	if err != nil {
@@ -206,8 +278,10 @@ func setupTest(t *testing.T, fn func(*Config)) (client proglog.LogClient, cfg *C
 		t.Fatalf("error setting up log %v", err)
 	}
 
+	authorizer := auth.New(config.ACLModelFile, config.ACLPolicyFile)
 	cfg = &Config{
-		CommitLog: cLog,
+		CommitLog:  cLog,
+		Authorizer: authorizer,
 	}
 
 	if fn != nil {
@@ -236,11 +310,10 @@ func setupTest(t *testing.T, fn func(*Config)) (client proglog.LogClient, cfg *C
 		server.Serve(l)
 	}()
 
-	client = proglog.NewLogClient(cc)
-
-	return client, cfg, func() {
+	return rootClient, nobodyClient, cfg, func() {
 		server.Stop()
-		cc.Close()
+		rootConn.Close()
+		nobodyConn.Close()
 		l.Close()
 		cLog.Remove()
 	}

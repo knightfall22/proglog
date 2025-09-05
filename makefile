@@ -46,17 +46,24 @@ gencert:
 
 	mv *.pem *.csr "${CONFIG_PATH}"
 
+# END: begin
 # START: auth
 $(CONFIG_PATH)/model.conf:
-	cp certs/model.conf $(CONFIG_PATH)/model.conf
+	cp certs/model.conf "$(CONFIG_PATH)/model.conf"
 
 $(CONFIG_PATH)/policy.csv:
-	cp certs/policy.csv $(CONFIG_PATH)/policy.csv
+	cp certs/policy.csv "$(CONFIG_PATH)/policy.csv"
 
-
+# START: begin
 .PHONY: test
+# END: auth
 test:
+# END: begin
+# START: auth
+test: $(CONFIG_PATH)/policy.csv $(CONFIG_PATH)/model.conf
+#: START: begin
 	go test -race ./...
+# END: auth
 
 .PHONY: compile
 compile:
@@ -67,3 +74,4 @@ compile:
 		--go-grpc_opt=paths=source_relative \
 		--proto_path=.
 
+# END: begin
