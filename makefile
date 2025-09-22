@@ -62,7 +62,7 @@ test:
 # START: auth
 test: $(CONFIG_PATH)/policy.csv $(CONFIG_PATH)/model.conf
 #: START: begin
-	go test -race ./...
+	go test -race ./... -debug=true
 # END: auth
 
 .PHONY: compile
@@ -74,4 +74,4 @@ compile:
 		--go-grpc_opt=paths=source_relative \
 		--proto_path=.
 
-# END: begin
+# END: begin`

@@ -3,20 +3,38 @@ package server
 import (
 	"bytes"
 	"context"
+	"flag"
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/knightfall22/proglog/internal/auth"
 	"github.com/knightfall22/proglog/internal/config"
 	log "github.com/knightfall22/proglog/internal/log"
+	"go.uber.org/zap"
 
 	proglog "github.com/knightfall22/proglog/api/v1"
+	"go.opencensus.io/examples/exporter"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 )
+
+var debug = flag.Bool("debug", false, "Enable observability for debugging.")
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if *debug {
+		logger, err := zap.NewDevelopment()
+		if err != nil {
+			panic(err)
+		}
+		zap.ReplaceGlobals(logger)
+	}
+	os.Exit(m.Run())
+}
 
 func TestServer(t *testing.T) {
 	for scenario, fn := range map[string]func(
@@ -28,6 +46,7 @@ func TestServer(t *testing.T) {
 		"produce/consume a message to/from the log succeeeds": testProduceConsume,
 		"produce/consume stream succeeds":                     testProduceConsumeStream,
 		"consume past log boundary fails":                     testConsumePastBoundary,
+		"unauthorized produce/consume fails":                  testUnauthorized,
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			rootClient, nobodyClient, config, teardown := setupTest(t, nil)
@@ -284,6 +303,35 @@ func setupTest(t *testing.T, fn func(*Config)) (
 		Authorizer: authorizer,
 	}
 
+	var telemetryExporter *exporter.LogExporter
+	if *debug {
+		metricsLogFile, err := os.CreateTemp("", "metrics-*.log")
+		if err != nil {
+			t.Fatalf("error creating metrics log file %v", err)
+		}
+
+		t.Logf("metrics log file: %s", metricsLogFile.Name())
+		tracesLogFile, err := os.CreateTemp("", "traces-*.log")
+		if err != nil {
+			t.Fatalf("error creating traces log file %v", err)
+		}
+		t.Logf("traces log file: %s", tracesLogFile.Name())
+
+		telemetryExporter, err = exporter.NewLogExporter(exporter.Options{
+			MetricsLogFile:    metricsLogFile.Name(),
+			TracesLogFile:     tracesLogFile.Name(),
+			ReportingInterval: time.Second,
+		})
+		if err != nil {
+			t.Fatalf("error creating telemetry exporter %v", err)
+		}
+
+		err = telemetryExporter.Start()
+		if err != nil {
+			t.Fatalf("error creating telemetry exporter %v", err)
+		}
+	}
+
 	if fn != nil {
 		fn(cfg)
 	}
@@ -315,6 +363,11 @@ func setupTest(t *testing.T, fn func(*Config)) (
 		rootConn.Close()
 		nobodyConn.Close()
 		l.Close()
+		if telemetryExporter != nil {
+			time.Sleep(1500 * time.Millisecond)
+			telemetryExporter.Stop()
+			telemetryExporter.Close()
+		}
 		cLog.Remove()
 	}
 }
