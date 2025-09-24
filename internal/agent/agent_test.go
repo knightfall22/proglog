@@ -11,6 +11,7 @@ import (
 
 	proglog "github.com/knightfall22/proglog/api/v1"
 	"github.com/knightfall22/proglog/internal/config"
+	"github.com/knightfall22/proglog/internal/loadbalance"
 	"github.com/travisjeffery/go-dynaport"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -106,6 +107,7 @@ func TestAgent(t *testing.T) {
 		t.Fatalf("cannot produce record %v", err)
 	}
 
+	time.Sleep(3 * time.Second)
 	consumeResp, err := leaderClient.Consume(
 		context.Background(),
 		&proglog.ConsumeRequest{
@@ -169,7 +171,9 @@ func client(
 		t.Fatalf("error getting rpc addr %v", err)
 	}
 
-	conn, err := grpc.NewClient(rpcAddr, opts...)
+	lbAddr := fmt.Sprintf("%s:///%s", loadbalance.Name, rpcAddr)
+
+	conn, err := grpc.NewClient(lbAddr, opts...)
 	if err != nil {
 		t.Fatalf("error dialing %v", err)
 	}

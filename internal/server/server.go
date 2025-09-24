@@ -29,8 +29,9 @@ const (
 )
 
 type Config struct {
-	CommitLog  CommitLog
-	Authorizer Authorizer
+	CommitLog   CommitLog
+	Authorizer  Authorizer
+	GetServerer GetServerer
 }
 
 var _ proglog.LogServer = (*grpcServer)(nil)
@@ -38,6 +39,10 @@ var _ proglog.LogServer = (*grpcServer)(nil)
 type grpcServer struct {
 	proglog.UnimplementedLogServer
 	*Config
+}
+
+type GetServerer interface {
+	GetServers() ([]*proglog.Server, error)
 }
 
 type CommitLog interface {
@@ -202,4 +207,16 @@ func (s *grpcServer) ConsumeStream(
 			req.Offset++
 		}
 	}
+}
+
+func (s *grpcServer) GetServers(
+	ctx context.Context,
+	req *proglog.GetServersRequest,
+) (*proglog.GetServersResponse, error) {
+	servers, err := s.GetServerer.GetServers()
+	if err != nil {
+		return nil, err
+	}
+
+	return &proglog.GetServersResponse{Servers: servers}, nil
 }

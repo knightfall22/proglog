@@ -151,6 +151,23 @@ func TestMultipleNodes(t *testing.T) {
 	if off != record.Offset {
 		t.Fatalf("offset mismatch expected %d got %d", off, record.Offset)
 	}
+
+	servers, err = logs[0].GetServers()
+	if err != nil {
+		t.Fatalf("error getting servers %v", err)
+	}
+
+	if len(servers) != 2 {
+		t.Fatalf("expected 2 server got %d", len(servers))
+	}
+
+	if !servers[0].IsLeader {
+		t.Fatal("expected server 0 to be the leader.")
+	}
+
+	if servers[1].IsLeader {
+		t.Fatal("expected server 0 to be the leader not server 1.")
+	}
 }
 
 func sleepMs(n int) {
