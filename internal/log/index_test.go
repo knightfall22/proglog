@@ -11,7 +11,6 @@ func TestIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(file.Name())
 
 	c := Config{}
 	c.Segment.MaxIndexBytes = 1024
@@ -20,6 +19,11 @@ func TestIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	defer func() {
+		idx.Close()
+		os.Remove(file.Name())
+	}()
 
 	_, _, err = idx.Read(-1)
 	if err == nil {
@@ -82,4 +86,5 @@ func TestIndex(t *testing.T) {
 	if pos != entries[1].Pos {
 		t.Fatalf("postion value mismatch after close expected %d got %d", entries[1].Pos, pos)
 	}
+
 }

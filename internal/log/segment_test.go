@@ -14,7 +14,11 @@ func TestSegment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Fatalf("unable to remove dir %v", err)
+		}
+	}()
 
 	want := &proglog.Record{Value: []byte("hello world")}
 
@@ -89,4 +93,6 @@ func TestSegment(t *testing.T) {
 	if s.IsMaxed() {
 		t.Fatal("segment should not be maxxed out")
 	}
+
+	s.Close()
 }

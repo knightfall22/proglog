@@ -21,12 +21,16 @@ func TestLog(t *testing.T) {
 		"truncate":                          testTruncate,
 	} {
 		t.Run(scenario, func(t *testing.T) {
-			dir, err := os.MkdirTemp("", "segment-test")
+			dir, err := os.MkdirTemp("", "segment-tests")
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.RemoveAll(dir)
-
+			defer func() {
+				err := os.RemoveAll(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}()
 			c := Config{}
 			c.Segment.MaxStoreBytes = 32
 			log, err := NewLog(dir, c)
@@ -61,6 +65,8 @@ func testAppendRead(t *testing.T, l *Log) {
 	if !bytes.Equal(res.Value, res.Value) {
 		t.Fatal("value mismatch")
 	}
+
+	l.Close()
 }
 
 func testOutOfRangeErr(t *testing.T, l *Log) {
@@ -74,6 +80,8 @@ func testOutOfRangeErr(t *testing.T, l *Log) {
 	if apiErr.Offset != 1 {
 		t.Fatal("offset mismatch")
 	}
+
+	l.Close()
 }
 
 func testInitExisting(t *testing.T, o *Log) {
@@ -132,6 +140,8 @@ func testInitExisting(t *testing.T, o *Log) {
 	if off != 2 {
 		t.Fatalf("offset mismatch expected %d got %d", 2, off)
 	}
+
+	n.Close()
 }
 
 func testReader(t *testing.T, log *Log) {
@@ -162,6 +172,8 @@ func testReader(t *testing.T, log *Log) {
 	if !bytes.Equal(read.Value, value.Value) {
 		t.Fatal("value mismatch")
 	}
+
+	log.Close()
 }
 
 func testTruncate(t *testing.T, log *Log) {
@@ -183,4 +195,6 @@ func testTruncate(t *testing.T, log *Log) {
 	if _, err := log.Read(1); err == nil {
 		t.Fatal("expected error")
 	}
+	log.Close()
+
 }

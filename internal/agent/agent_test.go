@@ -14,6 +14,7 @@ import (
 	"github.com/travisjeffery/go-dynaport"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 )
 
 func TestAgent(t *testing.T) {
@@ -67,6 +68,7 @@ func TestAgent(t *testing.T) {
 			BindAddr:        bindAddr,
 			RPCPort:         rpcPort,
 			DataDir:         dataDir,
+			Bootstrap:       i == 0,
 		})
 		if err != nil {
 			t.Fatalf("cannot create agent %v", err)
@@ -74,18 +76,21 @@ func TestAgent(t *testing.T) {
 
 		agents = append(agents, agent)
 
-		defer func() {
-			for _, agent := range agents {
-				if err := agent.Shutdown(); err != nil {
-					t.Fatalf("error shutting down %v", err)
-				}
-
-				if err := os.RemoveAll(agent.DataDir); err != nil {
-					t.Fatalf("error remving dir %v", err)
-				}
-			}
-		}()
 	}
+
+	defer func() {
+		for _, agent := range agents {
+			if err := agent.Shutdown(); err != nil {
+				t.Fatalf("error shutting down %v", err)
+			}
+
+			sleepMs(500)
+
+			if err := os.RemoveAll(agent.DataDir); err != nil {
+				t.Fatalf("error removing dir %v", err)
+			}
+		}
+	}()
 
 	time.Sleep(3 * time.Second)
 
@@ -115,6 +120,41 @@ func TestAgent(t *testing.T) {
 	if !bytes.Equal(consumeResp.Record.Value, []byte("Hello")) {
 		t.Fatalf("Value do not match expected: %s got: %s", []byte("Hello"), consumeResp.Record.Value)
 	}
+
+	time.Sleep(3 * time.Second)
+
+	followerClient := client(t, agents[1], peerTLSConfig)
+	consumeResp, err = followerClient.Consume(context.Background(),
+		&proglog.ConsumeRequest{
+			Offset: produceResp.Offset,
+		},
+	)
+	if err != nil {
+		t.Fatalf("cannot consume record %v", err)
+	}
+
+	if !bytes.Equal(consumeResp.Record.Value, []byte("Hello")) {
+		t.Fatalf("Value do not match expected: %s got: %s", []byte("Hello"), consumeResp.Record.Value)
+	}
+
+	consumeResp, err = followerClient.Consume(
+		context.Background(),
+		&proglog.ConsumeRequest{
+			Offset: produceResp.Offset + 1,
+		},
+	)
+
+	if consumeResp != nil {
+		t.Fatalf("expected nil consume response, got %v", consumeResp)
+	}
+
+	got := status.Code(err)
+	want := status.Code(proglog.ErrOffsetOutOfRange{}.GRPCStatus().Err())
+
+	if got != want {
+		t.Fatalf("got err: %v, want: %v", got, want)
+	}
+
 }
 
 func client(
@@ -133,10 +173,11 @@ func client(
 	if err != nil {
 		t.Fatalf("error dialing %v", err)
 	}
-	if err != nil {
-		t.Fatalf("error dialing %v", err)
-	}
 
 	client := proglog.NewLogClient(conn)
 	return client
+}
+
+func sleepMs(n int) {
+	time.Sleep(time.Duration(n) * time.Millisecond)
 }
