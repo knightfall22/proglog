@@ -10,15 +10,24 @@ import (
 
 type Authorizer struct {
 	enforcer *casbin.Enforcer
+	insecure bool
 }
 
 func New(model, policy string) *Authorizer {
+	authorizer := &Authorizer{}
 	enforcer := casbin.NewEnforcer(model, policy)
 
-	return &Authorizer{enforcer}
+	if model == "" && policy == "" {
+		authorizer.insecure = true
+	}
+	authorizer.enforcer = enforcer
+	return authorizer
 }
 
 func (a *Authorizer) Authorize(subject, object, action string) error {
+	if a.insecure {
+		return nil
+	}
 	if !a.enforcer.Enforce(subject, object, action) {
 		msg := fmt.Sprintf(
 			"%s not permitted to %s to %s",

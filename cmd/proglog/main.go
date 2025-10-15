@@ -78,6 +78,7 @@ func setupFlags(cmd *cobra.Command) error {
 	cmd.Flags().String("peer-tls-ca-file",
 		"",
 		"Path to peer certificate authority.")
+	cmd.Flags().String("tls-server-address", "127.0.0.1", "tls server address.")
 
 	return viper.BindPFlags(cmd.Flags())
 }
@@ -89,6 +90,7 @@ func (c *cli) setupConfig(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	viper.SetConfigFile(configFile)
+	viper.SetConfigType("yaml")
 
 	if err := viper.ReadInConfig(); err != nil {
 		// it's ok if config file doesn't exist
@@ -116,6 +118,7 @@ func (c *cli) setupConfig(cmd *cobra.Command, args []string) (err error) {
 		c.cfg.ServerTLSConfig.KeyFile != "" {
 
 		c.cfg.ServerTLSConfig.Server = true
+		c.cfg.ServerTLSConfig.ServerAddress = viper.GetString("tls-server-address")
 		c.cfg.Config.ServerTLSConfig, err = config.SetupTLSConfig(
 			c.cfg.ServerTLSConfig,
 		)
@@ -128,6 +131,7 @@ func (c *cli) setupConfig(cmd *cobra.Command, args []string) (err error) {
 	if c.cfg.PeerTLSConfig.CertFile != "" &&
 		c.cfg.PeerTLSConfig.KeyFile != "" {
 
+		c.cfg.PeerTLSConfig.ServerAddress = viper.GetString("tls-server-address")
 		c.cfg.Config.PeerTLSConfig, err = config.SetupTLSConfig(
 			c.cfg.PeerTLSConfig,
 		)

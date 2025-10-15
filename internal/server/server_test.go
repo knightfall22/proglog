@@ -12,6 +12,7 @@ import (
 	"github.com/knightfall22/proglog/internal/auth"
 	"github.com/knightfall22/proglog/internal/config"
 	log "github.com/knightfall22/proglog/internal/log"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
 	proglog "github.com/knightfall22/proglog/api/v1"
@@ -19,10 +20,17 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 )
 
 var debug = flag.Bool("debug", false, "Enable observability for debugging.")
+
+type clients struct {
+	Root   proglog.LogClient
+	Nobody proglog.LogClient
+	Health healthpb.HealthClient
+}
 
 func TestMain(m *testing.M) {
 	flag.Parse()
@@ -39,38 +47,38 @@ func TestMain(m *testing.M) {
 func TestServer(t *testing.T) {
 	for scenario, fn := range map[string]func(
 		t *testing.T,
-		rootClient proglog.LogClient,
-		nobodyClient proglog.LogClient,
+		clients clients,
 		config *Config,
 	){
 		"produce/consume a message to/from the log succeeeds": testProduceConsume,
 		"produce/consume stream succeeds":                     testProduceConsumeStream,
 		"consume past log boundary fails":                     testConsumePastBoundary,
 		"unauthorized produce/consume fails":                  testUnauthorized,
+		"healthcheck succeeds":                                testHealthCheck,
 	} {
 		t.Run(scenario, func(t *testing.T) {
-			rootClient, nobodyClient, config, teardown := setupTest(t, nil)
+			clients, config, teardown := setupTest(t, nil)
 			defer teardown()
-			fn(t, rootClient, nobodyClient, config)
+			fn(t, clients, config)
 		})
 	}
 }
 
-func testProduceConsume(t *testing.T, client, _ proglog.LogClient, config *Config) {
+func testProduceConsume(t *testing.T, clients clients, config *Config) {
 	ctx := context.Background()
 
 	value := proglog.Record{
 		Value: []byte("hello, angel"),
 	}
 
-	produce, err := client.Produce(ctx, &proglog.ProduceRequest{
+	produce, err := clients.Root.Produce(ctx, &proglog.ProduceRequest{
 		Record: &value,
 	})
 	if err != nil {
 		t.Fatalf("error occured while producing %v", err)
 	}
 
-	consume, err := client.Consume(ctx, &proglog.ConsumeRequest{
+	consume, err := clients.Root.Consume(ctx, &proglog.ConsumeRequest{
 		Offset: produce.Offset,
 	})
 	if err != nil {
@@ -86,10 +94,10 @@ func testProduceConsume(t *testing.T, client, _ proglog.LogClient, config *Confi
 	}
 }
 
-func testConsumePastBoundary(t *testing.T, client, _ proglog.LogClient, config *Config) {
+func testConsumePastBoundary(t *testing.T, clients clients, config *Config) {
 	ctx := context.Background()
 
-	produce, err := client.Produce(ctx, &proglog.ProduceRequest{
+	produce, err := clients.Root.Produce(ctx, &proglog.ProduceRequest{
 		Record: &proglog.Record{
 			Value: []byte("hello, angel"),
 		},
@@ -98,7 +106,7 @@ func testConsumePastBoundary(t *testing.T, client, _ proglog.LogClient, config *
 		t.Fatalf("error occured while producing %v", err)
 	}
 
-	consume, err := client.Consume(ctx, &proglog.ConsumeRequest{
+	consume, err := clients.Root.Consume(ctx, &proglog.ConsumeRequest{
 		Offset: produce.Offset + 1,
 	})
 	if consume != nil {
@@ -115,7 +123,7 @@ func testConsumePastBoundary(t *testing.T, client, _ proglog.LogClient, config *
 
 func testProduceConsumeStream(
 	t *testing.T,
-	client, _ proglog.LogClient,
+	client clients,
 	config *Config,
 ) {
 	ctx := context.Background()
@@ -132,7 +140,7 @@ func testProduceConsumeStream(
 	}
 	{
 
-		stream, err := client.ProduceStream(ctx)
+		stream, err := client.Root.ProduceStream(ctx)
 		if err != nil {
 			t.Fatalf("Failed starting up produce stream: %v\n", err)
 		}
@@ -160,7 +168,7 @@ func testProduceConsumeStream(
 		}
 	}
 	{
-		stream, err := client.ConsumeStream(ctx,
+		stream, err := client.Root.ConsumeStream(ctx,
 			&proglog.ConsumeRequest{Offset: 0},
 		)
 		if err != nil {
@@ -194,7 +202,7 @@ func testProduceConsumeStream(
 
 func testUnauthorized(
 	t *testing.T,
-	_, client proglog.LogClient,
+	client clients,
 	config *Config,
 ) {
 	ctx := context.Background()
@@ -203,7 +211,7 @@ func testUnauthorized(
 		Value: []byte("Wilson Fisk"),
 	}
 
-	res, err := client.Produce(ctx, &proglog.ProduceRequest{
+	res, err := client.Nobody.Produce(ctx, &proglog.ProduceRequest{
 		Record: records,
 	})
 
@@ -218,7 +226,7 @@ func testUnauthorized(
 		t.Fatalf("error mismatch want %v got %v", want, got)
 	}
 
-	consume, err := client.Consume(ctx, &proglog.ConsumeRequest{
+	consume, err := client.Nobody.Consume(ctx, &proglog.ConsumeRequest{
 		Offset: 0,
 	})
 
@@ -235,8 +243,7 @@ func testUnauthorized(
 }
 
 func setupTest(t *testing.T, fn func(*Config)) (
-	rootClient proglog.LogClient,
-	nobodyClient proglog.LogClient,
+	clients clients,
 	cfg *Config, teardown func()) {
 	t.Helper()
 
@@ -276,16 +283,18 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	}
 
 	var rootConn *grpc.ClientConn
-	rootConn, rootClient, _ = newClient(
+	rootConn, clients.Root, _ = newClient(
 		config.RootClientCertFile,
 		config.RootClientKeyFile,
 	)
 
 	var nobodyConn *grpc.ClientConn
-	nobodyConn, nobodyClient, _ = newClient(
+	nobodyConn, clients.Nobody, _ = newClient(
 		config.NobodyClientCertFile,
 		config.NobodyClientKeyFile,
 	)
+
+	clients.Health = healthpb.NewHealthClient(nobodyConn)
 
 	dir, err := os.MkdirTemp("", "segment-test")
 	if err != nil {
@@ -358,7 +367,7 @@ func setupTest(t *testing.T, fn func(*Config)) (
 		server.Serve(l)
 	}()
 
-	return rootClient, nobodyClient, cfg, func() {
+	return clients, cfg, func() {
 		server.Stop()
 		rootConn.Close()
 		nobodyConn.Close()
@@ -370,4 +379,15 @@ func setupTest(t *testing.T, fn func(*Config)) (
 		}
 		cLog.Remove()
 	}
+}
+
+func testHealthCheck(
+	t *testing.T,
+	clients clients,
+	config *Config,
+) {
+	ctx := context.Background()
+	res, err := clients.Health.Check(ctx, &healthpb.HealthCheckRequest{})
+	require.NoError(t, err)
+	require.Equal(t, healthpb.HealthCheckResponse_SERVING, res.Status)
 }

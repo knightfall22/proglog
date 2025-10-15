@@ -58,7 +58,6 @@ func (c Config) RPCAddr() (string, error) {
 }
 
 func New(config Config) (*Agent, error) {
-
 	a := &Agent{
 		shutdowns: make(chan struct{}),
 		Config:    config,
@@ -94,6 +93,7 @@ func (a *Agent) setupLogger() error {
 		return err
 	}
 	zap.ReplaceGlobals(logger)
+
 	return err
 }
 
@@ -129,17 +129,24 @@ func (a *Agent) setupLog() error {
 		a.ServerTLSConfig,
 		a.PeerTLSConfig,
 	)
+
+	var err error
+	rpcAddr, err := a.Config.RPCAddr()
+	if err != nil {
+		return err
+	}
+	logConfig.Raft.BindAddr = rpcAddr
 	logConfig.Raft.LocalID = raft.ServerID(a.NodeName)
 	logConfig.Raft.Bootstrap = a.Bootstrap
 
-	var err error
 	a.log, err = log.NewDistributedLog(a.DataDir, logConfig)
+
 	if err != nil {
 		return err
 	}
 
 	if a.Config.Bootstrap {
-		err = a.log.WaitForLeader(3 * time.Second)
+		err = a.log.WaitForLeader(10 * time.Second)
 	}
 
 	return err

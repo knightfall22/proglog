@@ -61,6 +61,7 @@ func (i *index) Close() error {
 	if err := i.file.Truncate(int64(i.size)); err != nil {
 		return err
 	}
+
 	return i.file.Close()
 }
 
@@ -93,6 +94,7 @@ func (i *index) Write(off uint32, pos uint64) error {
 	enc.PutUint32(i.mmap[i.size:i.size+offWidth], off)
 	enc.PutUint64(i.mmap[i.size+offWidth:i.size+entWidth], pos)
 	i.size += uint64(entWidth)
+
 	return nil
 }
 

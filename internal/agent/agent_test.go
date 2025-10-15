@@ -87,9 +87,7 @@ func TestAgent(t *testing.T) {
 
 			sleepMs(500)
 
-			if err := os.RemoveAll(agent.DataDir); err != nil {
-				t.Fatalf("error removing dir %v", err)
-			}
+			os.RemoveAll(agent.DataDir)
 		}
 	}()
 

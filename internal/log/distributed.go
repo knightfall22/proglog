@@ -136,7 +136,7 @@ func (l *DistributedLog) setupRaft(dir string) error {
 		config := raft.Configuration{
 			Servers: []raft.Server{{
 				ID:      config.LocalID,
-				Address: transport.LocalAddr(),
+				Address: raft.ServerAddress(l.config.Raft.BindAddr),
 			}},
 		}
 		err = l.raft.BootstrapCluster(config).Error()
@@ -163,6 +163,7 @@ func (l *DistributedLog) Join(id, addr string) error {
 				return nil
 			}
 
+			// remove the existing server
 			removeFuture := l.raft.RemoveServer(serverID, 0, 0)
 			if removeFuture.Error() != nil {
 				return removeFuture.Error()
@@ -226,6 +227,10 @@ func (l *DistributedLog) WaitForLeader(timeout time.Duration) error {
 func (l *DistributedLog) Close() error {
 	f := l.raft.Shutdown()
 	if err := f.Error(); err != nil {
+		return err
+	}
+
+	if err := l.raftLogStore.Close(); err != nil {
 		return err
 	}
 
