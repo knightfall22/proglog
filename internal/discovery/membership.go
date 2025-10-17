@@ -9,9 +9,32 @@ import (
 )
 
 type Config struct {
-	NodeName       string
-	BindAddr       string
-	Tags           map[string]string
+	//This is a unique name for the agent.
+	NodeName string
+	//This is the address and port used for communication between Serf agents in a cluster.
+	BindAddr string
+
+	// Serf shares these tags to the other nodes in the cluster and should
+	// use these tags for simple data that informs the cluster how to handle this
+	// node. For example, Consul shares each node’s RPC address with Serf
+	// tags, and once they know each other’s RPC address, they can make RPCs
+	// to each other. Consul shares whether the node is a voter or non-voter,
+	// which changes the node’s role in the Raft cluster.
+	// In our code, similar to Consul, we’ll share each node’s user-configured
+	// RPC address with a Serf tag so the nodes know which addresses
+	// to send their RPCs
+	Tags map[string]string
+
+	// When you have an existing cluster and you create a new node
+	// that you want to add to that cluster, you need to point your new node to
+	// at least one of the nodes now in the cluster. After the new node connects
+	// to one of those nodes in the existing cluster, it’ll learn about the rest of
+	// the nodes, and vice versa (the existing nodes learn about the new node).
+	// The StartJoinAddrs field is how you configure new nodes to join an existing
+	// cluster. You set the field to the addresses of nodes in the cluster, and
+	// Serf’s gossip protocol takes care of the rest to join your node to the cluster.
+	// In a production environment, specify at least three addresses to make
+	// your cluster resilient to one or two node failures or a disrupted network.
 	StartJoinAddrs []string
 }
 
@@ -69,9 +92,6 @@ func (m *Membership) setupSerf() error {
 
 	go m.eventHandler()
 	if m.StartJoinAddrs != nil {
-		//when you have an existing cluster and you create a new node
-		//that you want to add to that cluster, you need to point your new node to
-		//at least one of the nodes now in the cluster.
 		_, err = m.serf.Join(m.StartJoinAddrs, true)
 		if err != nil {
 			return err
@@ -80,6 +100,8 @@ func (m *Membership) setupSerf() error {
 	return nil
 }
 
+// Listens for serf events and processes them appropriately
+// depending on the type of event; join, leave or fail.
 func (m *Membership) eventHandler() {
 	for e := range m.events {
 		switch e.EventType() {
@@ -102,6 +124,7 @@ func (m *Membership) eventHandler() {
 	}
 }
 
+// Joins serf.Member to existing node use a class that fufills the handler interface
 func (m *Membership) handleJoin(member serf.Member) {
 	if err := m.handler.Join(
 		member.Name,
@@ -111,6 +134,7 @@ func (m *Membership) handleJoin(member serf.Member) {
 	}
 }
 
+// Remove serf.Member to existing node use a class that fufills the handler interface
 func (m *Membership) handleLeave(member serf.Member) {
 	if err := m.handler.Leave(
 		member.Name,

@@ -39,6 +39,7 @@ func NewLog(dir string, config Config) (*Log, error) {
 }
 
 func (l *Log) setup() error {
+	//Read all segement files from directory
 	files, err := os.ReadDir(l.Dir)
 	if err != nil {
 		return err
@@ -70,6 +71,14 @@ func (l *Log) setup() error {
 		if err = l.newSegment(
 			l.Config.Segment.InitialOffset,
 		); err != nil {
+			return err
+		}
+	}
+
+	if l.activeSegment.IsMaxed() {
+		offset := baseOffsets[len(baseOffsets)-1]
+
+		if err := l.newSegment(offset + 1); err != nil {
 			return err
 		}
 	}
@@ -163,6 +172,9 @@ func (l *Log) Truncate(lowest uint64) error {
 	return nil
 }
 
+// We’ll need this capability
+// when we implement coordinate consensus and need to support snapshots
+// and restoring a log.
 func (l *Log) Reader() io.Reader {
 	l.mu.RLock()
 	defer l.mu.RUnlock()

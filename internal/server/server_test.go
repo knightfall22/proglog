@@ -247,7 +247,7 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	cfg *Config, teardown func()) {
 	t.Helper()
 
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to setup listener %v", err)
 	}
@@ -262,7 +262,7 @@ func setupTest(t *testing.T, fn func(*Config)) (
 			CertFile:      crtPath,
 			KeyFile:       keyPath,
 			CAFile:        config.CAFile,
-			ServerAddress: l.Addr().String(),
+			ServerAddress: listener.Addr().String(),
 			Server:        false,
 		})
 		if err != nil {
@@ -272,7 +272,7 @@ func setupTest(t *testing.T, fn func(*Config)) (
 		tlsCreds := credentials.NewTLS(tlsConfig)
 		opts := []grpc.DialOption{grpc.WithTransportCredentials(tlsCreds)}
 
-		conn, err := grpc.NewClient(l.Addr().String(), opts...)
+		conn, err := grpc.NewClient(listener.Addr().String(), opts...)
 		if err != nil {
 			t.Fatalf("error setuping grpc client %v", err)
 		}
@@ -349,7 +349,7 @@ func setupTest(t *testing.T, fn func(*Config)) (
 		CertFile:      config.ServerCertFile,
 		KeyFile:       config.ServerKeyFile,
 		CAFile:        config.CAFile,
-		ServerAddress: l.Addr().String(),
+		ServerAddress: listener.Addr().String(),
 		Server:        true,
 	})
 	if err != nil {
@@ -364,14 +364,14 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	}
 
 	go func() {
-		server.Serve(l)
+		server.Serve(listener)
 	}()
 
 	return clients, cfg, func() {
 		server.Stop()
 		rootConn.Close()
 		nobodyConn.Close()
-		l.Close()
+		listener.Close()
 		if telemetryExporter != nil {
 			time.Sleep(1500 * time.Millisecond)
 			telemetryExporter.Stop()

@@ -17,7 +17,7 @@ type TLSConfig struct {
 
 func SetupTLSConfig(cfg TLSConfig) (*tls.Config, error) {
 	var err error
-	tlsConf := tls.Config{}
+	tlsConf := &tls.Config{}
 	if cfg.CertFile != "" && cfg.KeyFile != "" {
 		tlsConf.Certificates = make([]tls.Certificate, 1)
 		tlsConf.Certificates[0], err = tls.LoadX509KeyPair(
@@ -55,5 +55,5 @@ func SetupTLSConfig(cfg TLSConfig) (*tls.Config, error) {
 		tlsConf.ServerName = cfg.ServerAddress
 	}
 
-	return &tlsConf, nil
+	return tlsConf, nil
 }

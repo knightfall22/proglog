@@ -37,17 +37,6 @@ type Config struct {
 	GetServerer GetServerer
 }
 
-var _ proglog.LogServer = (*grpcServer)(nil)
-
-type grpcServer struct {
-	proglog.UnimplementedLogServer
-	*Config
-}
-
-type GetServerer interface {
-	GetServers() ([]*proglog.Server, error)
-}
-
 type CommitLog interface {
 	Append(*proglog.Record) (uint64, error)
 	Read(uint64) (*proglog.Record, error)
@@ -55,6 +44,18 @@ type CommitLog interface {
 
 type Authorizer interface {
 	Authorize(subject, object, action string) error
+}
+
+type GetServerer interface {
+	GetServers() ([]*proglog.Server, error)
+}
+
+var _ proglog.LogServer = (*grpcServer)(nil)
+
+// Implementation of Log service defined in log.proto
+type grpcServer struct {
+	proglog.UnimplementedLogServer
+	*Config
 }
 
 func authenticate(ctx context.Context) (context.Context, error) {
@@ -127,10 +128,12 @@ func NewGRPCServer(config *Config, opts ...grpc.ServerOption) (*grpc.Server, err
 
 	srv := grpc.NewServer(opts...)
 
+	//Register health checker
 	hsrv := health.NewServer()
 	hsrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(srv, hsrv)
 
+	//Register a grpc server with a class that fufills log service interface
 	proglog.RegisterLogServer(srv, grsrv)
 
 	return srv, nil
@@ -168,6 +171,10 @@ func (s *grpcServer) Consume(ctx context.Context, req *proglog.ConsumeRequest) (
 	return &proglog.ConsumeResponse{Record: rec}, nil
 }
 
+// A bidirectional streaming RPC where both the client and
+// server send a sequence of messages using a read-write stream. The two
+// streams operate independently, so the clients and servers can read and
+// write in whatever order they like.
 func (s *grpcServer) ProduceStream(
 	stream proglog.Log_ProduceStreamServer,
 ) error {
@@ -188,6 +195,8 @@ func (s *grpcServer) ProduceStream(
 	}
 }
 
+// A server-side streaming RPC where the client sends a
+// request to the server and gets back a stream to read a sequence of messages.
 func (s *grpcServer) ConsumeStream(
 	req *proglog.ConsumeRequest,
 	stream proglog.Log_ConsumeStreamServer,

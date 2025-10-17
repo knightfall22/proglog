@@ -16,10 +16,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// DistributedLog contains a log and a raft instance. Log entries are replicated to a raft cluster.
 type DistributedLog struct {
 	config Config
-	log    *Log
-	raft   *raft.Raft
+	//Serves as the fsm and is update on every commit
+	log  *Log
+	raft *raft.Raft
 
 	raftLogStore *logStore
 }
@@ -40,6 +42,13 @@ func NewDistributedLog(dataDir string, config Config) (*DistributedLog, error) {
 	return l, nil
 }
 
+// A Raft instance comprises:
+//   - A finite-state machine that applies the commands you give Raft;
+//   - A log store where Raft stores those commands;
+//   - A stable store where Raft stores the cluster’s configuration—the servers
+//     in the cluster, their addresses, and so on;
+//   - A snapshot store where Raft stores compact snapshots of its data; and
+//   - A transport that Raft uses to connect with the server’s peers.
 func (l *DistributedLog) setupLog(dir string) error {
 	logDir := filepath.Join(dir, "log")
 	if err := os.MkdirAll(logDir, 0755); err != nil {
@@ -65,7 +74,8 @@ func (l *DistributedLog) setupRaft(dir string) error {
 	if err != nil {
 		return err
 	}
-
+	// The stable store is a key-value store where Raft stores important metadata,
+	// like the server’s current term or the candidate the server voted for
 	stableStore, err := raftboltdb.NewBoltStore(
 		filepath.Join(dir, "raft", "stable"),
 	)
@@ -207,6 +217,53 @@ func (l *DistributedLog) GetServers() ([]*proglog.Server, error) {
 	return servers, nil
 }
 
+func (l *DistributedLog) Append(record *proglog.Record) (uint64, error) {
+	res, err := l.apply(
+		AppendRequestType,
+		&proglog.ProduceRequest{Record: record},
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	return res.(*proglog.ProduceResponse).Offset, nil
+}
+
+func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (any, error) {
+	var buf bytes.Buffer
+	_, err := buf.Write([]byte{byte(reqType)})
+	if err != nil {
+		return nil, err
+	}
+
+	b, err := proto.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = buf.Write(b)
+	if err != nil {
+		return nil, err
+	}
+
+	timeout := 10 * time.Second
+	future := l.raft.Apply(buf.Bytes(), timeout)
+	if future.Error() != nil {
+		return nil, future.Error()
+	}
+
+	res := future.Response()
+	if err, ok := res.(error); ok {
+		return nil, err
+	}
+
+	return res, err
+}
+
+func (l *DistributedLog) Read(offset uint64) (*proglog.Record, error) {
+	return l.log.Read(offset)
+}
+
 func (l *DistributedLog) WaitForLeader(timeout time.Duration) error {
 	timeoutc := time.After(timeout)
 	ticker := time.NewTicker(time.Second)
@@ -249,6 +306,7 @@ const (
 	AppendRequestType RequestType = 0
 )
 
+// Raft invokes this method after committing a log entry.
 func (f *fsm) Apply(record *raft.Log) any {
 	buf := record.Data
 	reqType := RequestType(buf[0])
@@ -276,11 +334,17 @@ func (f *fsm) applyAppend(b []byte) any {
 	return &proglog.ProduceResponse{Offset: offset}
 }
 
+// Raft periodically calls this method to snapshot its state.
 func (f *fsm) Snapshot() (raft.FSMSnapshot, error) {
 	r := f.log.Reader()
 	return &snapshot{reader: r}, nil
 }
 
+// Raft calls this to restore an FSM from a snapshot
+// Raft calls Restore() to restore an FSM from a snapshot. For example, if we lost
+// a server and scaled up a new one, we’d want to restore its FSM. The FSM
+// must discard existing state to make sure its state will match the leader’s
+// replicated state.
 func (f *fsm) Restore(r io.ReadCloser) error {
 	b := make([]byte, lenWidth)
 	var buf bytes.Buffer
@@ -328,6 +392,9 @@ type snapshot struct {
 	reader io.Reader
 }
 
+// Raft calls Persist() on the FSMSnapshot we created to write its state to some sink
+// that, depending on the snapshot store you configured Raft with, could be inmemory,
+// a file, an S3 bucket—something to store the bytes in.
 func (s *snapshot) Persist(sink raft.SnapshotSink) error {
 	if _, err := io.Copy(sink, s.reader); err != nil {
 		_ = sink.Cancel()
@@ -337,53 +404,6 @@ func (s *snapshot) Persist(sink raft.SnapshotSink) error {
 }
 
 func (s *snapshot) Release() {}
-
-func (l *DistributedLog) Append(record *proglog.Record) (uint64, error) {
-	res, err := l.apply(
-		AppendRequestType,
-		&proglog.ProduceRequest{Record: record},
-	)
-	if err != nil {
-		return 0, err
-	}
-
-	return res.(*proglog.ProduceResponse).Offset, nil
-}
-
-func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (any, error) {
-	var buf bytes.Buffer
-	_, err := buf.Write([]byte{byte(reqType)})
-	if err != nil {
-		return nil, err
-	}
-
-	b, err := proto.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = buf.Write(b)
-	if err != nil {
-		return nil, err
-	}
-
-	timeout := 10 * time.Second
-	future := l.raft.Apply(buf.Bytes(), timeout)
-	if future.Error() != nil {
-		return nil, future.Error()
-	}
-
-	res := future.Response()
-	if err, ok := res.(error); ok {
-		return nil, err
-	}
-
-	return res, err
-}
-
-func (l *DistributedLog) Read(offset uint64) (*proglog.Record, error) {
-	return l.log.Read(offset)
-}
 
 var _ raft.LogStore = (*logStore)(nil)
 
@@ -466,6 +486,10 @@ const RaftRPC = 1
 
 var RaftRPCByt = []byte{byte(RaftRPC)}
 
+// Dial(addr raft.ServerAddress, timeout time.Duration) makes outgoing connections to
+// other servers in the Raft cluster. When we connect to a server, we write the
+// RaftRPC byte to identify the connection type so we can multiplex Raft on the
+// same port as our Log gRPC requests.
 func (s *StreamLayer) Dial(address raft.ServerAddress, timeout time.Duration) (net.Conn, error) {
 	dialer := &net.Dialer{Timeout: timeout}
 	conn, err := dialer.Dial("tcp", string(address))
@@ -486,6 +510,8 @@ func (s *StreamLayer) Dial(address raft.ServerAddress, timeout time.Duration) (n
 	return conn, err
 }
 
+// Accept() is the mirror of Dial(). We accept the incoming connection and read the
+// byte that identifies the connection and then create a server-side TLS connection.
 func (s *StreamLayer) Accept() (net.Conn, error) {
 	conn, err := s.ln.Accept()
 	if err != nil {

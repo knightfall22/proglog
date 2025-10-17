@@ -9,6 +9,11 @@ import (
 	"google.golang.org/grpc"
 )
 
+// Pull based replication from connected grpc server. Fufills discovery.Handler interface.
+// This is used in conjuction with serf, once a node joins the cluster the replicate() func is called.
+// This starts up a polling based replication logic that adds logs gotten from the connected node to it's own
+// store, using the LocalServer field.
+// Important: not used in final build
 type Replicator struct {
 	DialOptions []grpc.DialOption
 	LocalServer proglog.LogClient

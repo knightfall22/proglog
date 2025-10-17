@@ -2,6 +2,7 @@ package log
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -57,6 +58,8 @@ func TestSegment(t *testing.T) {
 		if !bytes.Equal(got.Value, want.Value) {
 			t.Fatalf("expected %s got %s", want.Value, got.Value)
 		}
+
+		fmt.Printf("Records: %+v\n", got)
 	}
 
 	_, err = s.Append(want)

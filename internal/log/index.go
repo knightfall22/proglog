@@ -13,6 +13,8 @@ var (
 	entWidth        = offWidth + posWidth
 )
 
+// Stores index of a log in the store file.
+// Our index entries contain two fields: the record’s offset and its position in the store file
 type index struct {
 	file *os.File
 	mmap gommap.MMap
@@ -34,6 +36,7 @@ func newIndex(f *os.File, c Config) (*index, error) {
 		return nil, err
 	}
 
+	//Reads file contents into memory
 	if idx.mmap, err = gommap.Map(
 		idx.file.Fd(),
 		gommap.PROT_READ|gommap.PROT_WRITE,
@@ -46,6 +49,7 @@ func newIndex(f *os.File, c Config) (*index, error) {
 }
 
 func (i *index) Close() error {
+	//Flush all changes to the file
 	if err := i.mmap.Sync(gommap.MS_SYNC); err != nil {
 		return err
 	}
@@ -76,13 +80,13 @@ func (i *index) Read(in int64) (off uint32, pos uint64, err error) {
 		off = uint32(in)
 	}
 
-	pos = uint64(off) * entWidth
+	offPos := uint64(off) * entWidth
 	if i.size < pos+entWidth {
 		return 0, 0, io.EOF
 	}
 
-	off = enc.Uint32(i.mmap[pos : pos+offWidth])
-	pos = enc.Uint64(i.mmap[pos+offWidth : pos+entWidth])
+	off = enc.Uint32(i.mmap[offPos : offPos+offWidth])
+	pos = enc.Uint64(i.mmap[offPos+offWidth : offPos+entWidth])
 	return
 }
 
@@ -91,6 +95,7 @@ func (i *index) Write(off uint32, pos uint64) error {
 		return io.EOF
 	}
 
+	//Write into mmap. Note that once the file is closed the changes will be flushed into the actual file
 	enc.PutUint32(i.mmap[i.size:i.size+offWidth], off)
 	enc.PutUint64(i.mmap[i.size+offWidth:i.size+entWidth], pos)
 	i.size += uint64(entWidth)

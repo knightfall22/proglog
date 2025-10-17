@@ -20,6 +20,7 @@ type store struct {
 	size uint64
 }
 
+// Contains all log entries
 func newStore(f *os.File) (*store, error) {
 	fi, err := os.Stat(f.Name())
 	if err != nil {

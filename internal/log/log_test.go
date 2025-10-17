@@ -14,11 +14,12 @@ func TestLog(t *testing.T) {
 	for scenario, fn := range map[string]func(
 		t *testing.T, log *Log,
 	){
-		"append and read a record succeeds": testAppendRead,
-		"offset out of range error":         testOutOfRangeErr,
-		"init with existing segments":       testInitExisting,
-		"reader":                            testReader,
-		"truncate":                          testTruncate,
+		"append and read a record succeeds":  testAppendRead,
+		"offset out of range error":          testOutOfRangeErr,
+		"init with existing segments":        testInitExisting,
+		"reader":                             testReader,
+		"truncate":                           testTruncate,
+		"test if inital active file is full": testActiveFileFull,
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			dir, err := os.MkdirTemp("", "segment-tests")
@@ -197,4 +198,37 @@ func testTruncate(t *testing.T, log *Log) {
 	}
 	log.Close()
 
+}
+
+func testActiveFileFull(t *testing.T, log *Log) {
+	value := &proglog.Record{
+		Value: []byte("he"),
+	}
+
+	for range 2 {
+		_, err := log.Append(value)
+		if err != nil {
+			t.Fatalf("error appending to log %v", err)
+		}
+	}
+
+	if len(log.segments) > 1 {
+		t.Fatalf("expected 1 segment got %d\n", len(log.segments))
+	}
+
+	if err := log.Close(); err != nil {
+		t.Fatalf("error closing log %v\n", err)
+	}
+
+	log.Config.Segment.MaxIndexBytes = 32
+	newLog, err := NewLog(log.Dir, log.Config)
+	if err != nil {
+		t.Fatalf("Failed to create new log %v\n", err)
+	}
+
+	if len(newLog.segments) != 2 {
+		t.Fatalf("invalid amounts of segments expected %d got %d", 2, len(newLog.segments))
+	}
+
+	newLog.Close()
 }
