@@ -1,5 +1,6 @@
 ## Distributed Log Store
-Simple distributed log store. Complete with:
+File based distributed log storage.
+Features:
 - TLS/ACl authorization
 - Raft based replication algorithm
 -  Client based load balancer
