@@ -1,5 +1,5 @@
-## Distributed Log Store
-File based distributed log storage.
+## Fault-Tolerant Log Storage Engine with Raft Consensus
+A highly available, disk-persistent log aggregation system designed for cloud-native environments. Built with Go and gRPC, it leverages the Raft consensus algorithm for fault-tolerant replication and Serf for decentralized cluster membership, ensuring zero data loss and seamless scalability within Kubernetes.
 ### Features:
 - TLS/ACl authorization
 - Raft based replication algorithm
