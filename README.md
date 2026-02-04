@@ -4,7 +4,7 @@ A highly available, disk-persistent log aggregation system designed for cloud-na
 ### Features
 - **Distributed Consensus:** Utilizes hashicorp's Raft implementation to maintain strict data consistency and state machine replication across the cluster, ensuring no data loss during leader elections.
 - **Decentralized Peer Discovery:** Leverages Serf (Gossip Protocol) for automated cluster membership, allowing nodes to dynamically discover each other without a centralized registry.
-- **High-Performance gRPC:** Utilizes gRPC and Protocol Buffers for efficient, low-latency communication, log streaming and strongly-typed API contracts between clients and storage nodes.
+- **High-Performance gRPC:** Utilizes gRPC and Protocol Buffers for efficient, low-latency communication, log streaming, load balancing and strongly-typed API contracts between clients and storage nodes.
 - **Production-Grade Security:** Built with a Zero-Trust approach, featuring mTLS for encrypted transport and ACL-based authorization to secure log access.
 - **Cloud-Native Orchestration:** Fully optimized for Kubernetes with custom Helm charts, supporting seamless scaling and automated deployment lifecycles.
 - **Persistent Log Engine**: Features a custom, disk-backed storage implementation designed for durability, ensuring logs are safely persisted across container restarts.
