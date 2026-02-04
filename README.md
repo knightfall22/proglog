@@ -12,19 +12,19 @@ A highly available, disk-persistent log aggregation system designed for cloud-na
 
 ### Architecture Overview
 #### 1. Log Layer
-* Manages data persistence using a **segmented log architecture** for efficient storage management.
-* Implements **automatic log rotation** by creating new segments once size thresholds are met.
-* Enables high-speed retrieval through **indexed lookups** across multiple segment files.
+* Manages data persistence using a segmented log architecture for efficient storage management.
+* Implements automatic log rotation by creating new segments once size thresholds are met.
+* Enables high-speed retrieval through indexed lookups across multiple segment files.
 * Simplifies data retention and lifecycle management by allowing old segments to be purged efficiently.
 
 #### 2. Distribution Layer
-* Orchestrates **cluster-wide consistency** using the Raft consensus algorithm for reliable state management.
-* Manages **automatic leader election** and log replication to ensure the system remains fault-tolerant.
-* Utilizes **Serf (Gossip Protocol)** for decentralized node discovery and real-time health monitoring.
+* Orchestrates cluster-wide consistency using the Raft consensus algorithm for reliable state management.
+* Manages automatic leader election and log replication to ensure the system remains fault-tolerant.
+* Utilizes Serf (Gossip Protocol) for decentralized node discovery and real-time health monitoring.
 * Prevents data loss during node failures or network partitions by requiring majority commitment.
 
 #### 3. API & Transport Layer
-* Serves as the system gateway using **gRPC** with a native **client-side load balancer** for optimal traffic routing.
-* Enforces **Zero-Trust security** via mTLS encryption and granular ACL-based authorization.
-* Integrated with **OpenTelemetry** for distributed tracing and **Zap** for high-performance structured logging.
-* Provides a standardized interface for the **CLI** and external services to interact with the cluster state.
+* Serves as the system gateway using gRPC with a native client-side load balancer for optimal traffic routing.
+* Enforces Zero-Trust security via mTLS encryption and granular ACL-based authorization.
+* Integrated with OpenTelemetry for distributed tracing and Zap for high-performance structured logging.
+* Provides a standardized interface for the CLI and external services to interact with the cluster state.
